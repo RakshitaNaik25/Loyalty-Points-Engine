@@ -1,0 +1,30 @@
+{
+  "event_rules": {
+    "deposit": {
+      "points_per_unit": 1,
+      "unit_amount": 100,
+      "base_bonus": 10,
+      "cap": 100
+    },
+    "purchase": {
+      "points_per_unit": 2,
+      "unit_amount": 100,
+      "base_bonus": 5,
+      "cap": 150
+    },
+    "referral": {
+      "fixed_points": 50,
+      "cap": 50
+    },
+    "withdrawal": {
+      "fixed_points": 0,
+      "cap": 0
+    }
+  },
+  "bonus_rules": {
+    "weekend_multiplier": {
+      "enabled": true,
+      "multiplier": 2
+    }
+  }
+}
