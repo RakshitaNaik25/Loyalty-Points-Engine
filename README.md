@@ -1,6 +1,6 @@
 # Loyalty Points Engine
 
-A complete full-stack loyalty rewards system featuring a highly reliable, idempotent event-driven backend and a professional dashboard for easy inspection and demoing.
+This project is a loyalty points backend with a small React dashboard. The backend handles event ingestion, point calculation, ledger entries, redemption, and reversal. The frontend is included only to make testing and demonstration easier.
 
 ---
 
@@ -8,17 +8,17 @@ A complete full-stack loyalty rewards system featuring a highly reliable, idempo
 
 ### Backend
 - **Python 3.10+**
-- **FastAPI** (Web API router and core request handling)
-- **SQLite** (Embedded database)
-- **SQLAlchemy** (ORM for schemas and operations)
-- **Pydantic** (Data validation and serialization)
-- **pytest** & **httpx** (Automated integration test suite)
+- **FastAPI** (Web framework for handling requests)
+- **SQLite** (Database)
+- **SQLAlchemy** (ORM for database operations)
+- **Pydantic** (Data validation and schemas)
+- **pytest** & **httpx** (Testing setup)
 
 ### Frontend
 - **React 19** & **TypeScript**
-- **Vite** (Next-gen frontend toolchain)
-- **Tailwind CSS** (Clean, custom styled, lightweight design system)
-- **Axios** (API requests client)
+- **Vite** (Build tool)
+- **Tailwind CSS** (Styling library)
+- **Axios** (HTTP client)
 
 ---
 
@@ -29,17 +29,17 @@ loyalty-points-engine/
 │
 ├── backend/
 │   ├── app/
-│   │   ├── main.py            # FastAPI router configuration and entry point
-│   │   ├── database.py        # SQLAlchemy database engine and session helper
-│   │   ├── models.py          # SQLAlchemy schemas (Event, LedgerEntry, Redemption)
+│   │   ├── main.py            # API routing and entry point
+│   │   ├── database.py        # Database setup and session creation
+│   │   ├── models.py          # SQLAlchemy models (Event, LedgerEntry, Redemption)
 │   │   ├── schemas.py         # Pydantic validation schemas
-│   │   ├── rules_engine.py    # Configurable rules calculation solver
-│   │   ├── rewards.py         # Static rewards catalogue definition
-│   │   ├── services.py        # Core database transactions & operations logic
+│   │   ├── rules_engine.py    # Points calculation logic
+│   │   ├── rewards.py         # Rewards catalog list
+│   │   ├── services.py        # Core database transactions & operation functions
 │   │   ├── config/
-│   │   │   └── rules.json     # Configuration file for point rules
+│   │   │   └── rules.json     # JSON config file for point scoring rules
 │   │   └── tests/
-│   │       └── test_core.py   # pytest suite using isolated test database
+│   │       └── test_core.py   # pytest file using isolated test database
 │   ├── requirements.txt
 │   └── README_BACKEND.md
 │
@@ -123,26 +123,26 @@ pytest
 
 ---
 
-## Core Engineering Designs
+## Core Logic Designs
 
-### 1. Idempotency Enforcer
-Every transaction event must carry a unique `event_id`. When a request is submitted, the API checks for the presence of the `event_id` in the `events` table before executing any scoring logic or ledger entries.
-- If the event exists, the backend returns a `200 OK` response with `status: "duplicate"` alongside the existing event details and current user balance. No ledger duplicate is created.
-- If it does not exist, it executes the rules solver and persists the new Event and Ledger entry inside a single database transaction.
+### 1. Idempotency handling
+Each event must contain a unique `event_id`. When a request comes in, the backend checks if the `event_id` exists in the database first.
+- If the event exists, the API returns `200 OK` with `status: "duplicate"` along with the previously saved event details and user balance. It does not write to the ledger again.
+- If it does not exist, it runs the points calculation and saves both the Event and Ledger entry inside a single database transaction.
 
-### 2. Configurable Rules Engine
-Points are calculated dynamically on-the-fly based on values configured in `backend/app/config/rules.json`.
-- Rules support base units points division (e.g. 1 point per $100 spent), flat points (e.g. 50 points per referral), fixed bonuses (e.g. 10 bonus points on deposits), and total caps (maximum points allowed on a single event).
-- Stacking weekend multiplier: If the event's timestamp is a Saturday or Sunday, points are multiplied by the multiplier (e.g., x2), up to the event's configured maximum cap.
+### 2. Configurable Rules
+Points are calculated dynamically based on values configured in `backend/app/config/rules.json`.
+- Rules support base units points division (e.g. 1 point per $100 spent), flat points (e.g. 50 points per referral), fixed bonuses (e.g. 10 bonus points on deposits), and caps (maximum points allowed on a single event).
+- Weekend multiplier: If the event's timestamp is a Saturday or Sunday, points are multiplied by the multiplier (e.g., x2), up to the event's configured maximum cap.
 
-### 3. Immutable Points Ledger
-To maintain a strict audit trail, the user's balance is never saved or updated in a single column.
-- Every transaction writes an immutable row into the `LedgerEntry` table with `entry_type` as `CREDIT` (earning positive points), `DEBIT` (redemption negative points), or `REVERSAL` (corrective negative points).
+### 3. Points Ledger
+To maintain an audit log, the user's balance is never saved or updated in a single column.
+- Every transaction writes a new row into the `LedgerEntry` table with `entry_type` as `CREDIT` (earning points), `DEBIT` (redemption), or `REVERSAL` (compensation adjustment).
 - To compute a user's current points balance, the database sums the points of all ledger entries for that user. Old records are never edited or deleted.
 
-### 4. Audit Reversals
-If an event needs to be reversed, the API inserts a compensating `REVERSAL` ledger entry carrying negative points equivalent to the original event points. The original event is marked `is_reversed = true` to prevent double-reversal.
-- **Negative Balance Assumption**: If a user has already redeemed points and has insufficient balance to cover a subsequent event reversal, **the reversal is still fully allowed**. The user's balance will drop below zero. This is a standard audit correction assumption to guarantee ledger integrity.
+### 4. Event Reversals
+If an event needs to be reversed, the API inserts a compensating `REVERSAL` ledger entry carrying negative points equivalent to the original event points. The original event is marked `is_reversed = true` so it cannot be reversed multiple times.
+- **Negative Balance Assumption**: If a user has already redeemed points and has insufficient balance to cover a subsequent event reversal, **the reversal is still allowed**. The user's balance will drop below zero. This is done to make sure the ledger history remains correct.
 
 ---
 
@@ -164,11 +164,11 @@ If an event needs to be reversed, the API inserts a compensating `REVERSAL` ledg
 
 ---
 
-## curl Demonstration Examples & Proofs
+## curl Examples
 
-Use these command line instructions to verify the engine's core correctness guarantees.
+Use these command line instructions to test the API operations.
 
-### 1. Idempotency Proof (Duplicate event does not double-award points)
+### 1. Idempotency Example
 First, send an event `evt_001` for `user_123`:
 ```bash
 curl -X POST http://localhost:8000/events ^
@@ -220,7 +220,7 @@ curl -X POST http://localhost:8000/events ^
 ```
 *Note: Notice how `current_balance` remains `40`. The duplicate request did not modify the database or award points twice.*
 
-### 2. Balance Verification
+### 2. Balance Check
 Check the balance of `user_123`:
 ```bash
 curl http://localhost:8000/users/user_123/balance
@@ -230,7 +230,7 @@ curl http://localhost:8000/users/user_123/balance
 {"user_id":"user_123","balance":40}
 ```
 
-### 3. Insufficient Redemption Fail Proof
+### 3. Insufficient Balance Redemption Example
 Attempt to redeem a Movie Ticket (costs 120 points) for `user_123` who only has 40 points:
 ```bash
 curl -X POST http://localhost:8000/redeem ^
@@ -245,7 +245,7 @@ curl -X POST http://localhost:8000/redeem ^
 ```
 *Note: Verify that the ledger does not contain any debit records from this failed attempt.*
 
-### 4. Successful Redemption Proof
+### 4. Successful Redemption Example
 Now, earn enough points by depositing $2000 on a weekday (Wednesday):
 ```bash
 curl -X POST http://localhost:8000/events ^
@@ -273,7 +273,7 @@ curl -X POST http://localhost:8000/redeem ^
 }
 ```
 
-### 5. Reversal Audit Compensation Proof
+### 5. Reversal Example
 Now, reverse the original Saturday event `evt_001` (which awarded 40 points). Note that the user has a balance of 20 points, so this will drive the balance negative:
 ```bash
 curl -X POST http://localhost:8000/reverse/evt_001
@@ -346,4 +346,9 @@ curl http://localhost:8000/users/user_123/balance
 ```json
 {"user_id":"user_123","balance":-20}
 ```
-*Note: This proves that the balance can drop below zero following an audit correction, preserving correct system auditing.*
+*Note: This shows that the balance can drop below zero following an audit correction, preserving correct system auditing.*
+
+---
+
+## AI Usage Disclosure
+AI tools were used to assist with the initial setup, boilerplate structure, edge-case checks, and drafting the README. Details are recorded in `AI_USAGE_WRITEUP.md`.
